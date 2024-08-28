@@ -9,6 +9,12 @@
 #include <cstdlib>
 #include <vector>
 
+#ifdef _MSC_VER
+#define _AMD64_
+#include <ConsoleApi2.h>
+#include <winnls.h>
+#endif
+
 struct llava_context {
     struct clip_ctx * ctx_clip = NULL;
     struct llama_context * ctx_llama = NULL;
@@ -248,7 +254,32 @@ static const char * llama_loop(struct llava_context * ctx_llava,struct llama_sam
     return tmp;
 }
 
+#ifdef _MSC_VER
+std::string multibytesToUtf8(const std::string& s) {
+    std::string codepage_str = s;
+    int size = MultiByteToWideChar(CP_ACP, MB_COMPOSITE, codepage_str.c_str(),
+        codepage_str.length(), nullptr, 0);
+    std::wstring utf16_str(size, '\0');
+    MultiByteToWideChar(CP_ACP, MB_COMPOSITE, codepage_str.c_str(),
+        codepage_str.length(), &utf16_str[0], size);
+
+    int utf8_size = WideCharToMultiByte(CP_UTF8, 0, utf16_str.c_str(),
+        utf16_str.length(), nullptr, 0,
+        nullptr, nullptr);
+    std::string utf8_str(utf8_size, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, utf16_str.c_str(),
+        utf16_str.length(), &utf8_str[0], utf8_size,
+        nullptr, nullptr);
+    return utf8_str;
+}
+#endif
+
 int main(int argc, char ** argv) {
+#ifdef _MSC_VER
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+#endif
+
     ggml_time_init();
 
     gpt_params params;
@@ -276,9 +307,19 @@ int main(int argc, char ** argv) {
         auto ctx_llava = minicpmv_init(&params, image, n_past);
 
         if (!params.prompt.empty()) {
-            LOG_TEE("<user>%s\n", params.prompt.c_str());
+
+            auto utf8prompt = params.prompt;
+
+#ifdef _MSC_VER
+            utf8prompt = multibytesToUtf8(params.prompt);
+#endif
+
+            LOG_TEE("<user>%s\n", utf8prompt.c_str());
             LOG_TEE("<assistant>");
-            auto ctx_sampling = llama_init(ctx_llava, &params, params.prompt.c_str(), n_past, true);
+
+            
+
+            auto ctx_sampling = llama_init(ctx_llava, &params, utf8prompt.c_str(), n_past, true);
             const int max_tgt_len = params.n_predict < 0 ? 256 : params.n_predict;
             std::string response = "";
             bool have_tmp = false;
